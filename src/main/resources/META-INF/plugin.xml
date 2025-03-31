@@ -27,6 +27,8 @@
 
     </extensions>
 
+    <depends>com.intellij.modules.java</depends>
+
     <actions>
         <action id="com.example.plugin.MyRefactorAction"
                 class="org.example.emm.MyRefactorAction"
