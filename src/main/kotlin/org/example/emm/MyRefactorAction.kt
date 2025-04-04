@@ -124,16 +124,10 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
                         }
 
                         // 2. 메소드를 원래 순서대로 대상 클래스에 추가
-                        // 먼저 이동 가능한 의존성 메소드 추가
                         for (methodToCopy in orderedMethodsToMove) {
-                            if (methodToCopy != currentMethod) {
-                                val methodCopy = factory.createMethodFromText(methodToCopy.text, targetClass)
-                                targetClass.add(methodCopy)
-                            }
+                            val methodCopy = factory.createMethodFromText(methodToCopy.text, targetClass)
+                            targetClass.add(methodCopy)
                         }
-
-                        // 마지막으로 수정된 현재 메소드 추가
-                        targetClass.add(adjustedCurrentMethod)
 
                         // 3. 원본 메소드 삭제 (이동 가능한 메소드만)
                         for (methodToDelete in orderedMethodsToMove.reversed()) {
@@ -258,7 +252,9 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
                     // 이 메소드가 대상 메소드와 그 의존성 메소드에서만 배타적으로 사용되는지 확인
                     val isExclusiveToTargetChain = isOnlyCalledByTargetMethodChain(calledMethod, visited)
                     dependencies[calledMethod] = isExclusiveToTargetChain
-                    processMethod(calledMethod, visited.toMutableSet())
+                    if (isExclusiveToTargetChain) {
+                        processMethod(calledMethod, visited.toMutableSet())
+                    }
                 }
             }
         }
