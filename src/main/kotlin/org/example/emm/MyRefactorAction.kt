@@ -10,7 +10,6 @@ import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
-import com.intellij.openapi.util.Disposer
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
@@ -21,165 +20,150 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val editor = e.getData(CommonDataKeys.EDITOR) ?: return
-        val document = editor.document
-        val caret = editor.caretModel.currentCaret
-        val offset = caret.offset
-        val psiFile = e.getData(CommonDataKeys.PSI_FILE) ?: return
-        val element = psiFile.findElementAt(offset) ?: return
 
         // 클래스 이름 검색 팝업 창 표시
         val model = GotoClassModel2(project)
-        val popup = ChooseByNamePopup.createPopup(project, model, null)
-        popup.invoke(object : ChooseByNamePopupComponent.Callback() {
-            override fun elementChosen(element: Any) {
-                if (element is PsiClass) {
-                    val targetClass = element
+        ChooseByNamePopup
+            .createPopup(project, model, null)
+            .invoke(object : ChooseByNamePopupComponent.Callback() {
+                override fun elementChosen(element: Any?) {
+                    handleElementChosen(e, element as PsiClass)
+                }
+            }, ModalityState.current(), true)
+    }
 
-                    // 현재 선택된 메서드 찾기
-                    val currentMethod = this@MyRefactorAction.findMethodAtCaret(e) ?: return
-                    val sourceClass = currentMethod.containingClass ?: return
-                    val methodName = currentMethod.name
+    private fun handleElementChosen(e: AnActionEvent, targetClass: PsiClass) {
+        val project = e.project ?: return
+        val currentMethod = findMethodAtCaret(e) ?: return
+        val sourceClass = currentMethod.containingClass ?: return
 
-                    // 메소드가 의존하는 다른 메소드들 찾기 (true: 독점적으로 사용됨, false: 다른 메소드에서도 사용됨)
-                    val methodDependenciesMap = findMethodDependenciesWithExclusivity(currentMethod, sourceClass)
+        val methodDependenciesMap = findMethodDependenciesWithExclusivity(currentMethod, sourceClass)
+        val methodsToMove = methodDependenciesMap.filter { it.value }.keys.toSet()
+        val externalDependencies = methodDependenciesMap.filter { !it.value }.keys.toSet()
 
-                    // 독점적으로 사용되는 메소드만 이동 대상으로 선택
-                    val methodsToMove = methodDependenciesMap.filter { it.value }.keys.toSet()
-                    // 다른 메소드에서도 사용되는 메소드는 이동하지 않음
-                    val externalDependencies = methodDependenciesMap.filter { !it.value }.keys.toSet()
+        val allMethodsToMove = mutableListOf<PsiMethod>().apply {
+            add(currentMethod)
+            addAll(methodsToMove)
+        }
 
-                    // 모든 메소드 사용처 찾기 (현재 메소드 + 이동 가능한 의존성 메소드들)
-                    val allMethodsToMove = mutableListOf<PsiMethod>().apply {
-                        add(currentMethod)
-                        addAll(methodsToMove)
-                    }
+        val usages = findUsages(project, allMethodsToMove)
 
-                    val usages = mutableListOf<PsiElement>()
-                    val searchScope = GlobalSearchScope.projectScope(project)
+        if (usages.isNotEmpty() || externalDependencies.isNotEmpty()) {
+            if (!confirmMethodMoveFromDialog(project, usages, methodsToMove, externalDependencies)) {
+                return
+            }
+        }
 
-                    // 이동할 메소드들의 사용처 찾기
-                    for (method in allMethodsToMove) {
-                        ReferencesSearch.search(method, searchScope)
-                            .forEach { reference ->
-                                usages.add(reference.element)
-                            }
-                    }
+        val factory = JavaPsiFacade.getElementFactory(project)
+        val orderedMethodsToMove = sourceClass.methods.filter { it in allMethodsToMove }
+        runWriteCommandAction(project) {
+            if (externalDependencies.isNotEmpty<PsiMethod>()) {
+                adjustMethodForExternalDependencies(
+                    currentMethod,
+                    sourceClass,
+                    externalDependencies,
+                    factory
+                )
+            } else {
+                factory.createMethodFromText(currentMethod.text, null)
+            }
 
-                    // 사용자에게 알림 메시지 구성
-                    if (usages.isNotEmpty() || externalDependencies.isNotEmpty()) {
-                        val usageClasses = usages.mapNotNull {
-                            it.parentOfType<PsiClass>(false)?.qualifiedName
-                        }.distinct()
+            for (methodToCopy in orderedMethodsToMove) {
+                val methodCopy = factory.createMethodFromText(methodToCopy.text, targetClass)
+                targetClass.add(methodCopy)
+            }
 
-                        val movableMethodsMessage = if (methodsToMove.isNotEmpty()) {
-                            "\n\n이 메소드와 함께 다음 의존 메소드들이 이동됩니다:\n" +
-                                    methodsToMove.joinToString("\n") { it.name }
-                        } else ""
+            for (methodToDelete in orderedMethodsToMove.reversed()) {
+                methodToDelete.delete()
+            }
 
-                        val externalDependenciesMessage = if (externalDependencies.isNotEmpty()) {
-                            "\n\n다음 메소드들은 다른 메소드에서도 사용되므로 이동되지 않습니다:\n" +
-                                    externalDependencies.joinToString("\n") { it.name } +
-                                    "\n(대신 소스 클래스 참조를 통해 호출됩니다)"
-                        } else ""
-
-                        val usagesMessage = if (usageClasses.isNotEmpty()) {
-                            "이 메소드는 다음 클래스에서 사용되고 있습니다:\n" +
-                                    usageClasses.joinToString("\n")
-                        } else ""
-
-                        val message = listOf(usagesMessage, movableMethodsMessage, externalDependenciesMessage)
-                            .filter { it.isNotEmpty() }
-                            .joinToString("\n\n") + "\n\n계속 진행하시겠습니까?"
-
-                        val result = Messages.showYesNoDialog(
-                            project,
-                            message,
-                            "메소드 이동 확인",
-                            Messages.getQuestionIcon()
-                        )
-
-                        if (result != Messages.YES) {
-                            return
-                        }
-                    }
-
-                    // PsiElementFactory를 사용하여 메서드 복사본 생성
-                    val factory = JavaPsiFacade.getElementFactory(project)
-
-                    // 소스 클래스에서 메소드 순서를 찾기
-                    val orderedMethodsToMove = sourceClass.methods.filter { it in allMethodsToMove }
-
-                    runWriteCommandAction(project) {
-                        // 1. 현재 메소드 수정 (외부 의존성이 있는 경우 소스 클래스를 파라미터로 추가)
-                        val adjustedCurrentMethod = if (externalDependencies.isNotEmpty()) {
-                            adjustMethodForExternalDependencies(
-                                currentMethod,
-                                sourceClass,
-                                externalDependencies,
-                                factory
-                            )
-                        } else {
-                            factory.createMethodFromText(currentMethod.text, null)
-                        }
-
-                        // 2. 메소드를 원래 순서대로 대상 클래스에 추가
-                        for (methodToCopy in orderedMethodsToMove) {
-                            val methodCopy = factory.createMethodFromText(methodToCopy.text, targetClass)
-                            targetClass.add(methodCopy)
-                        }
-
-                        // 3. 원본 메소드 삭제 (이동 가능한 메소드만)
-                        for (methodToDelete in orderedMethodsToMove.reversed()) {
-                            methodToDelete.delete()
-                        }
-
-                        // 4. import 문 추가 (소스 클래스 import 필요)
-                        if (externalDependencies.isNotEmpty()) {
-                            val file = targetClass.containingFile as? PsiJavaFile
-                            if (file != null) {
-                                addImportIfNeeded(file, sourceClass.qualifiedName ?: "")
-                            }
-                        }
-                    }
-
-                    // 메소드 사용처 업데이트
-                    val callsToUpdate =
-                        collectMethodCalls(usages, allMethodsToMove.map { it.name }, sourceClass.name ?: "")
-
-                    if (callsToUpdate.isNotEmpty()) {
-                        updateMethodCalls(
-                            project,
-                            callsToUpdate,
-                            targetClass,
-                            sourceClass,
-                            externalDependencies.isNotEmpty()
-                        )
-                    }
-
-                    // 성공 메시지 표시
-                    val movedMethodsCount = allMethodsToMove.size
-                    val externalDepsCount = externalDependencies.size
-
-                    val movedMethodsMessage = if (movedMethodsCount > 1) {
-                        "메서드 '${methodName}' 및 관련된 ${movedMethodsCount - 1}개의 메서드가"
-                    } else {
-                        "메서드 '${methodName}'이(가)"
-                    }
-
-                    val externalDepsMessage = if (externalDepsCount > 0) {
-                        "\n\n${externalDepsCount}개의 메서드는 다른 메서드에서도 사용되므로 이동되지 않았으며, 대신 소스 클래스를 통해 호출됩니다."
-                    } else ""
-
-                    Messages.showMessageDialog(
-                        project,
-                        "${movedMethodsMessage} '${sourceClass.name}'에서 '${targetClass.name}'으로 이동되었습니다.${externalDepsMessage}",
-                        "메서드 이동 완료",
-                        Messages.getInformationIcon()
-                    )
+            if (externalDependencies.isNotEmpty()) {
+                val file = targetClass.containingFile as? PsiJavaFile
+                if (file != null) {
+                    addImportIfNeeded(file, sourceClass.qualifiedName ?: "")
                 }
             }
-        }, ModalityState.current(), true)
+        }
+        val callsToUpdate = collectMethodCalls(usages,
+            allMethodsToMove.map { it.name }, sourceClass.name ?: ""
+        )
+        if (callsToUpdate.isNotEmpty<MethodCallInfo>()) {
+            updateMethodCalls(
+                project,
+                callsToUpdate,
+                targetClass,
+                sourceClass,
+                externalDependencies.isNotEmpty()
+            )
+        }
+        val movedMethodsCount = allMethodsToMove.size
+        val externalDepsCount = externalDependencies.size
+        val movedMethodsMessage = if (movedMethodsCount > 1) {
+            "메서드 '${currentMethod.name}' 및 관련된 ${movedMethodsCount - 1}개의 메서드가"
+        } else {
+            "메서드 '${currentMethod.name}'이(가)"
+        }
+        val externalDepsMessage = if (externalDepsCount > 0) {
+            "\n\n${externalDepsCount}개의 메서드는 다른 메서드에서도 사용되므로 이동되지 않았으며, 대신 소스 클래스를 통해 호출됩니다."
+        } else ""
+        Messages.showMessageDialog(
+            project,
+            "${movedMethodsMessage} '${sourceClass.name}'에서 '${targetClass.name}'으로 이동되었습니다.${externalDepsMessage}",
+            "메서드 이동 완료",
+            Messages.getInformationIcon()
+        )
+    }
+
+    private fun findUsages(project: Project, methods: List<PsiMethod>): MutableList<PsiElement> {
+        val usages = mutableListOf<PsiElement>()
+        val searchScope = GlobalSearchScope.projectScope(project)
+
+        for (method in methods) {
+            ReferencesSearch.search(method, searchScope).forEach { reference ->
+                usages.add(reference.element)
+            }
+        }
+        return usages
+    }
+
+    private fun confirmMethodMoveFromDialog(
+        project: Project,
+        usages: List<PsiElement>,
+        methodsToMove: Set<PsiMethod>,
+        externalDependencies: Set<PsiMethod>
+    ): Boolean {
+        val usageClasses = usages.mapNotNull {
+            it.parentOfType<PsiClass>(false)?.qualifiedName
+        }.distinct()
+
+        val movableMethodsMessage = if (methodsToMove.isNotEmpty()) {
+            "\n\n이 메소드와 함께 다음 의존 메소드들이 이동됩니다:\n" +
+                    methodsToMove.joinToString("\n") { it.name }
+        } else ""
+
+        val externalDependenciesMessage = if (externalDependencies.isNotEmpty()) {
+            "\n\n다음 메소드들은 다른 메소드에서도 사용되므로 이동되지 않습니다:\n" +
+                    externalDependencies.joinToString("\n") { it.name } +
+                    "\n(대신 소스 클래스 참조를 통해 호출됩니다)"
+        } else ""
+
+        val usagesMessage = if (usageClasses.isNotEmpty()) {
+            "이 메소드는 다음 클래스에서 사용되고 있습니다:\n" +
+                    usageClasses.joinToString("\n")
+        } else ""
+
+        val message = listOf(usagesMessage, movableMethodsMessage, externalDependenciesMessage)
+            .filter { it.isNotEmpty() }
+            .joinToString("\n\n") + "\n\n계속 진행하시겠습니까?"
+
+        val result = Messages.showYesNoDialog(
+            project,
+            message,
+            "메소드 이동 확인",
+            Messages.getQuestionIcon()
+        )
+
+        return result == Messages.YES
     }
 
     /**
