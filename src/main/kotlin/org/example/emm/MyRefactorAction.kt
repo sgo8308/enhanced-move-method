@@ -25,25 +25,26 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
 
     // 액션이 실행될 때 호출되는 메소드
     override fun actionPerformed(e: AnActionEvent) {
-        val project = e.project ?: return // 프로젝트 가져오기, null이면 종료
+        val project = e.project ?: return
+        val currentMethod = findMethodAtCaret(e) ?: return
+        val sourceClass = currentMethod.containingClass ?: return
 
-        // 클래스 이름 검색 팝업 창 표시 (메소드를 이동할 대상 클래스 선택)
-        val model = GotoClassModel2(project) // 클래스 검색 모델 생성
-        ChooseByNamePopup
-            .createPopup(project, model, null) // 팝업 생성
-            .invoke(object : ChooseByNamePopupComponent.Callback() { // 콜백 설정
-                // 사용자가 클래스를 선택했을 때 호출
-                override fun elementChosen(element: Any?) {
-                    handleElementChosen(e, element as PsiClass) // 선택된 클래스로 후속 처리
-                }
-            }, ModalityState.current(), true) // 현재 모달리티 상태 사용
+        // 통합된 대화상자 표시
+        val dialog = MoveMethodDialog(project, currentMethod.name, sourceClass.name ?: "")
+
+        if (dialog.showAndGet()) {
+            val targetClass = dialog.getSelectedClass()
+            if (targetClass != null) {
+                val accessModifier = dialog.getSelectedAccessModifier()
+                handleElementChosen(e, targetClass, accessModifier)
+            }
+        }
     }
 
-    // 클래스가 선택되었을 때 메소드 이동 처리
-    private fun handleElementChosen(e: AnActionEvent, targetClass: PsiClass) {
-        val project = e.project ?: return // 프로젝트 가져오기
-        val currentMethod = findMethodAtCaret(e) ?: return // 현재 커서 위치의 메소드 찾기
-        val sourceClass = currentMethod.containingClass ?: return // 메소드가 속한 클래스 가져오기
+    private fun handleElementChosen(e: AnActionEvent, targetClass: PsiClass, accessModifier: String) {
+        val project = e.project ?: return
+        val currentMethod = findMethodAtCaret(e) ?: return
+        val sourceClass = currentMethod.containingClass ?: return
 
         // 메소드와 그 의존성 메소드들의 이동 가능 여부 분석
         val methodDependenciesMap =
@@ -106,13 +107,15 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
         }
 
         // 메소드 호출 위치 업데이트
-        val callsToUpdate = collectMethodCalls(usages) // 메소드 호출 정보 수집
+        val callsToUpdate = collectMethodCalls(usages)
         if (callsToUpdate.isNotEmpty<MethodCallInfo>()) {
             updateMethodCalls(
                 project,
                 callsToUpdate,
-                targetClass
-                // 외부 의존성 여부
+                targetClass,
+                sourceClass,
+                externalDependencies.isNotEmpty(),
+                accessModifier  // 선택된 접근 제어자 전달
             )
         }
 
@@ -298,7 +301,10 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
     private fun updateMethodCalls(
         project: Project,
         callsToUpdate: List<MethodCallInfo>,
-        targetClass: PsiClass
+        targetClass: PsiClass,
+        sourceClass: PsiClass,
+        needsSourceClassParam: Boolean,
+        accessModifier: String  // 매개변수 추가
     ) {
         val targetClassName = targetClass.name ?: return
         val targetQualifiedName = targetClass.qualifiedName ?: return
@@ -311,23 +317,20 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
 
             if (needsFieldInjection) {
                 // 필드 추가가 필요한 경우 사용자에게 접근 제어자 선택 요청
-                val accessModifier = promptForAccessModifier(project)
-                if (accessModifier != null) {
-                    runWriteCommandAction(project) {
-                        // 필드 추가
-                        addFieldToClass(call.containingClass, targetClass, accessModifier)
+                runWriteCommandAction(project) {
+                    // 필드 추가
+                    addFieldToClass(call.containingClass, targetClass, accessModifier)
 
-                        // import 문 추가
-                        addImportIfNeeded(call.containingClass.containingFile as PsiJavaFile, targetQualifiedName)
+                    // import 문 추가
+                    addImportIfNeeded(call.containingClass.containingFile as PsiJavaFile, targetQualifiedName)
 
-                        // 메소드 호출 업데이트
-                        val variableName = targetClassName.decapitalize()
-                        updateMethodCall(
-                            call.element as PsiMethodCallExpression,
-                            variableName
-                            // 소스 클래스에서 호출하는지 여부
-                        )
-                    }
+                    // 메소드 호출 업데이트
+                    val variableName = targetClassName.decapitalize()
+                    updateMethodCall(
+                        call.element as PsiMethodCallExpression,
+                        variableName
+                        // 소스 클래스에서 호출하는지 여부
+                    )
                 }
             } else if (call.originalQualifier != null) {
                 // 이미 필드가 있는 경우, 호출만 업데이트
