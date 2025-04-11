@@ -1,21 +1,16 @@
 package org.example.emm // 패키지 선언
 
 // 필요한 IntelliJ IDEA API 클래스들을 임포트
-import com.intellij.ide.util.gotoByName.ChooseByNamePopup // 클래스 검색 팝업
-import com.intellij.ide.util.gotoByName.ChooseByNamePopupComponent // 검색 팝업 콜백 처리
-import com.intellij.ide.util.gotoByName.GotoClassModel2 // 클래스 검색 모델
-import com.intellij.openapi.actionSystem.AnAction // IntelliJ 액션 기본 클래스
-import com.intellij.openapi.actionSystem.AnActionEvent // 액션 이벤트
-import com.intellij.openapi.actionSystem.CommonDataKeys // 에디터 정보 접근 키
-import com.intellij.openapi.application.ModalityState // 모달 상태 관리
-import com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction // 쓰기 명령 실행
-import com.intellij.openapi.project.Project // 프로젝트 객체
-import com.intellij.openapi.ui.Messages // 메시지 다이얼로그
-import com.intellij.psi.* // PSI(Program Structure Interface) 클래스들
-import com.intellij.psi.search.GlobalSearchScope // 검색 범위 지정
-import com.intellij.psi.search.searches.ReferencesSearch // 참조 검색
-import com.intellij.psi.util.PsiTreeUtil // PSI 트리 탐색 유틸
-import com.intellij.psi.util.parentOfType // 부모 타입 검색 확장 함수
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
+import com.intellij.psi.*
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.search.searches.ReferencesSearch
+import com.intellij.psi.util.parentOfType
 
 // '메소드 이동' 리팩토링 액션 클래스
 class MyRefactorAction : AnAction("Enhanced Move Method") {
@@ -47,58 +42,31 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
         val sourceClass = currentMethod.containingClass ?: return
 
         // 메소드와 그 의존성 메소드들의 이동 가능 여부 분석
-        val methodDependenciesMap =
-            dependencyAnalyzer.findMethodDependenciesWithExclusivity(currentMethod, sourceClass, e.project ?: return)
-        val methodsToMove = methodDependenciesMap.filter { it.value }.keys.toSet() // 이동 가능한 메소드들
-        val externalDependencies = methodDependenciesMap.filter { !it.value }.keys.toSet() // 이동 불가능한 외부 의존성 메소드들
-
-        // 모든 이동 대상 메소드 목록 생성
-        val allMethodsToMove = mutableListOf<PsiMethod>().apply {
-            add(currentMethod) // 선택한 메소드 추가
-            addAll(methodsToMove) // 이동 가능한 의존성 메소드들 추가
-        }
+        val methodGroupWithCanMoveMap = dependencyAnalyzer.findMethodGroupWithCanMove(currentMethod)
+        val methodsCanMove = methodGroupWithCanMoveMap.filter { it.value }.keys.toSet() // 이동 가능한 메소드들
+        val methodsCanNotMove = methodGroupWithCanMoveMap.filter { !it.value }.keys.toSet() // 이동 불가능한 외부 의존성 메소드들
 
         // 이동할 메소드들의 사용처 찾기
-        val usages = findUsages(project, allMethodsToMove)
-
-        // 사용처나 외부 의존성이 있으면 사용자에게 확인 다이얼로그 표시
-        if (usages.isNotEmpty() || externalDependencies.isNotEmpty()) {
-            if (!confirmMethodMoveFromDialog(project, usages, methodsToMove, externalDependencies)) {
-                return // 사용자가 취소하면 종료
-            }
-        }
 
         // 메소드 이동 로직 실행
         val factory = JavaPsiFacade.getElementFactory(project) // PSI 요소 생성 팩토리
-        val orderedMethodsToMove = sourceClass.methods.filter { it in allMethodsToMove } // 원본 순서대로 메소드 정렬
+        val orderedMethodsToMove = sourceClass.methods.filter { it in methodsCanMove } // 원본 순서대로 메소드 정렬
 
         // 쓰기 작업 실행 (코드 수정)
         runWriteCommandAction(project) {
-            // 외부 의존성이 있는 경우 메소드 조정
-            if (externalDependencies.isNotEmpty<PsiMethod>()) {
-                adjustMethodForExternalDependencies(
-                    currentMethod,
-                    sourceClass,
-                    externalDependencies,
-                    factory
-                )
-            } else {
-                factory.createMethodFromText(currentMethod.text, null) // 메소드 복사본 생성
-            }
-
             // 모든 메소드를 대상 클래스에 복사
             for (methodToCopy in orderedMethodsToMove) {
                 val methodCopy = factory.createMethodFromText(methodToCopy.text, targetClass)
                 targetClass.add(methodCopy) // 대상 클래스에 메소드 추가
             }
 
-            // 원본 메소드들을a 역순으로 삭제 (의존성 문제 방지)
+            // 원본 메소드들을 역순으로 삭제 (의존성 문제 방지)
             for (methodToDelete in orderedMethodsToMove.reversed()) {
                 methodToDelete.delete()
             }
 
             // 외부 의존성이 있는 경우 원본 클래스 임포트 추가
-            if (externalDependencies.isNotEmpty()) {
+            if (methodsCanNotMove.isNotEmpty()) {
                 val file = targetClass.containingFile as? PsiJavaFile
                 if (file != null) {
                     addImportIfNeeded(file, sourceClass.qualifiedName ?: "")
@@ -106,22 +74,20 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
             }
         }
 
-        // 메소드 호출 위치 업데이트
-        val callsToUpdate = collectMethodCalls(usages)
-        if (callsToUpdate.isNotEmpty<MethodCallInfo>()) {
+        // 타겟 메소드 및 타겟 메소드 내부 메소드를 호출하는 외부 메소드들의 참조 변경
+        val callsToUpdate = collectMethodCalls(project, methodsCanMove)
+        if (callsToUpdate.isNotEmpty()) {
             updateMethodCalls(
                 project,
                 callsToUpdate,
                 targetClass,
-                sourceClass,
-                externalDependencies.isNotEmpty(),
                 accessModifier  // 선택된 접근 제어자 전달
             )
         }
 
         // 완료 메시지 구성 및 표시
-        val movedMethodsCount = allMethodsToMove.size
-        val externalDepsCount = externalDependencies.size
+        val movedMethodsCount = methodsCanMove.size
+        val externalDepsCount = methodsCanNotMove.size
         val movedMethodsMessage = if (movedMethodsCount > 1) {
             "메서드 '${currentMethod.name}' 및 관련된 ${movedMethodsCount - 1}개의 메서드가"
         } else {
@@ -139,7 +105,7 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
     }
 
     // 메소드 사용처 찾기
-    private fun findUsages(project: Project, methods: List<PsiMethod>): MutableList<PsiElement> {
+    private fun findUsages(project: Project, methods: Set<PsiMethod>): MutableList<PsiElement> {
         val usages = mutableListOf<PsiElement>() // 사용처 저장 리스트
         val searchScope = GlobalSearchScope.projectScope(project) // 프로젝트 전체 범위 지정
 
@@ -219,54 +185,6 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
         return element.parentOfType<PsiMethod>(true) // 요소의 부모 메소드 반환
     }
 
-    // 외부 의존성이 있는 메소드 조정
-    private fun adjustMethodForExternalDependencies(
-        method: PsiMethod,
-        sourceClass: PsiClass,
-        externalDependencies: Set<PsiMethod>,
-        factory: PsiElementFactory
-    ): PsiMethod {
-        if (externalDependencies.isEmpty()) return method // 외부 의존성 없으면 원본 반환
-
-        // 원본 클래스 파라미터 이름 생성
-        val sourceClassName = sourceClass.name ?: "sourceClass"
-        val sourceParamName = sourceClassName.decapitalize()
-
-        // 메소드 복사본 생성
-        val methodCopy = factory.createMethodFromText(method.text, null)
-
-        // 메소드 본문에서 외부 의존성 메소드 호출을 수정
-        val methodCallExpressions = PsiTreeUtil.findChildrenOfType(methodCopy, PsiMethodCallExpression::class.java)
-
-        // 각 메소드 호출 검사
-        for (methodCall in methodCallExpressions) {
-            val resolveResult = methodCall.methodExpression.advancedResolve(false) // 호출된 메소드 확인
-            val calledMethod = resolveResult.element as? PsiMethod ?: continue
-
-            // 외부 의존성 메소드인 경우 호출 방식 변경
-            if (calledMethod in externalDependencies) {
-                // 호출식 구조 분석
-                val oldExpr = methodCall.methodExpression
-                val methodName = oldExpr.referenceName ?: continue
-
-                // 원본 클래스 참조를 통한 메소드 호출로 변경
-                val newExprText = "$sourceParamName.$methodName"
-                val qualifierExpression = oldExpr.qualifierExpression
-
-                // 직접 호출 또는 this를 통한 호출인 경우 변경
-                if (qualifierExpression == null) {
-                    val newExpr = factory.createExpressionFromText(newExprText, methodCall)
-                    oldExpr.replace(newExpr)
-                } else if (qualifierExpression.text == "this") {
-                    val newExpr = factory.createExpressionFromText(newExprText, methodCall)
-                    oldExpr.replace(newExpr)
-                }
-            }
-        }
-
-        return methodCopy
-    }
-
     // 메소드 호출 정보 저장 클래스
     private data class MethodCallInfo(
         val element: PsiElement, // 호출 요소
@@ -276,8 +194,10 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
 
     // 메소드 호출 정보 수집
     private fun collectMethodCalls(
-        usages: List<PsiElement>
+        project: Project,
+        methodsCanMove: Set<PsiMethod>
     ): List<MethodCallInfo> {
+        val usages = findUsages(project, methodsCanMove)
         val result = mutableListOf<MethodCallInfo>()
 
         // 각 사용처에 대해 호출 정보 수집
@@ -302,9 +222,7 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
         project: Project,
         callsToUpdate: List<MethodCallInfo>,
         targetClass: PsiClass,
-        sourceClass: PsiClass,
-        needsSourceClassParam: Boolean,
-        accessModifier: String  // 매개변수 추가
+        accessModifier: String  // 매개변수 추가){}){}
     ) {
         val targetClassName = targetClass.name ?: return
         val targetQualifiedName = targetClass.qualifiedName ?: return
@@ -350,21 +268,6 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
         return containingClass.fields.any { field ->
             field.type.canonicalText == typeName // 필드 타입 비교
         }
-    }
-
-    // 접근 제어자 선택 다이얼로그 표시
-    private fun promptForAccessModifier(project: Project): String? {
-        val options = arrayOf("private final", "public", "public final", "private")
-        val result = Messages.showChooseDialog(
-            project,
-            "새 필드의 접근 제어자를 선택하세요",
-            "접근 제어자 선택",
-            Messages.getQuestionIcon(),
-            options,
-            options[0]
-        )
-
-        return if (result >= 0) options[result] else null // 선택된 접근 제어자 반환
     }
 
     // 클래스에 필드 추가

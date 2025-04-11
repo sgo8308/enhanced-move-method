@@ -20,7 +20,7 @@ class MoveMethodDialog(
 
     private var selectedClass: PsiClass? = null
     private val targetClassField = JBTextField()
-    private val accessModifiers = arrayOf("private final", "public", "public final", "private")
+    private val accessModifiers = arrayOf("private final", "private", "public final", "public")
     private val radioButtons = accessModifiers.map { JBRadioButton(it) }.toTypedArray()
 
     init {
