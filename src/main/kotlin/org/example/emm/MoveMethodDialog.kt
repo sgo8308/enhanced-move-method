@@ -29,6 +29,15 @@ class MoveMethodDialog(
         radioButtons[0].isSelected = true  // 기본값 설정
     }
 
+    // 대화상자가 표시되기 전에 클래스 선택기를 먼저 표시
+    override fun show() {
+        if (openClassChooser()) {
+            super.show()
+        } else {
+            close(CANCEL_EXIT_CODE)
+        }
+    }
+
     // 대화상자의 기본 크기 설정
     override fun getPreferredSize(): Dimension {
         return Dimension(500, 250)  // 가로 500px, 세로 250px
@@ -57,7 +66,7 @@ class MoveMethodDialog(
         classSelectorPanel.add(targetClassField, BorderLayout.CENTER)
         targetClassField.preferredSize = Dimension(300, targetClassField.preferredSize.height)  // 텍스트 필드 가로 크기 조정
 
-        val browseButton = JButton("찾기...")
+        val browseButton = JButton("변경...")
         browseButton.addActionListener { openClassChooser() }
         classSelectorPanel.add(browseButton, BorderLayout.EAST)
 
@@ -82,7 +91,8 @@ class MoveMethodDialog(
         return panel
     }
 
-    private fun openClassChooser() {
+    // 클래스 선택창 열기 - 선택 여부를 boolean으로 반환
+    private fun openClassChooser(): Boolean {
         val chooserFactory = TreeClassChooserFactory.getInstance(project)
         val chooser = chooserFactory.createProjectScopeChooser("대상 클래스 선택")
 
@@ -92,6 +102,8 @@ class MoveMethodDialog(
         if (selected != null) {
             selectedClass = selected
             targetClassField.text = selected.qualifiedName ?: selected.name ?: ""
+            return true
         }
+        return false
     }
 }

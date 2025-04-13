@@ -12,7 +12,7 @@ import com.intellij.psi.util.parentOfType
  * 메소드 의존성 분석을 담당하는 클래스입니다.
  * 메소드 호출 그래프 생성 및 의존성 분석 기능을 제공합니다.
  */
-class MethodDependencyAnalyzer {
+class MovableMethodFinder {
 
     /**
      * 주어진 메소드의 의존성을 분석하고, 각 의존성 메소드가 이동 가능한지 여부를 판단합니다.
