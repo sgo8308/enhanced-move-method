@@ -18,6 +18,10 @@ class MoveMethodDialog(
     private val sourceClassName: String
 ) : DialogWrapper(project) {
 
+    companion object {
+        private var lastSelectedAccessModifier: String = "private final" // 초기 기본값
+    }
+
     private var selectedClass: PsiClass? = null
     private val targetClassField = JBTextField()
     private val accessModifiers = arrayOf("private final", "private", "public final", "public")
@@ -26,7 +30,8 @@ class MoveMethodDialog(
     init {
         title = "메소드 이동 - $initialMethodName"
         init()
-        radioButtons[0].isSelected = true  // 기본값 설정
+        // 마지막 선택된 접근 제어자를 기본값으로 설정
+        radioButtons.firstOrNull { it.text == lastSelectedAccessModifier }?.isSelected = true
     }
 
     // 대화상자가 표시되기 전에 클래스 선택기를 먼저 표시
@@ -46,7 +51,9 @@ class MoveMethodDialog(
     fun getSelectedClass(): PsiClass? = selectedClass
 
     fun getSelectedAccessModifier(): String {
-        return radioButtons.first { it.isSelected }.text
+        val selectedModifier = radioButtons.first { it.isSelected }.text
+        lastSelectedAccessModifier = selectedModifier // 선택된 값을 저장
+        return selectedModifier
     }
 
     override fun createCenterPanel(): JComponent {
@@ -91,7 +98,6 @@ class MoveMethodDialog(
         return panel
     }
 
-    // 클래스 선택창 열기 - 선택 여부를 boolean으로 반환
     private fun openClassChooser(): Boolean {
         val chooserFactory = TreeClassChooserFactory.getInstance(project)
         val chooser = chooserFactory.createProjectScopeChooser("대상 클래스 선택")
@@ -102,6 +108,7 @@ class MoveMethodDialog(
         if (selected != null) {
             selectedClass = selected
             targetClassField.text = selected.qualifiedName ?: selected.name ?: ""
+
             return true
         }
         return false
