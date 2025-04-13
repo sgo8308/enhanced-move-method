@@ -7,6 +7,8 @@ import com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.psi.*
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.parentOfType
 
 class MyRefactorAction : AnAction("Enhanced Move Method") {
@@ -97,10 +99,27 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
                 methodToDelete.delete()
             }
 
+            // 메소드 이동과 관련된 모든 클래스에 대해서 safe delete 수행
+            val dirtyClasses = methodReferencesToUpdate.map { it.containingClass } + originalClass + targetClass
+            for (psiClass in dirtyClasses) {
+                val fields = psiClass.fields
+                for (field in fields) {
+                    if (isSafeToDelete(field, project)) {
+                        field.delete()
+                    }
+                }
+            }
         }
 
         // 완료 메시지 구성 및 표시
         showCompletionMessage(originalMethod, originalClass, targetClass, methodsToMove.size, methodsToStay.size)
+    }
+
+
+    private fun isSafeToDelete(field: PsiField, project: Project): Boolean {
+        val searchScope = GlobalSearchScope.projectScope(project)
+        val references = ReferencesSearch.search(field, searchScope).findAll()
+        return references.isEmpty()
     }
 
     override fun update(e: AnActionEvent) {
