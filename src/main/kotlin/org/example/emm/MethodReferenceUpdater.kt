@@ -18,13 +18,13 @@ class MethodReferenceUpdater(private val project: Project) {
         accessModifier: String
     ) {
         // 타겟 클래스 내부에서의 호출인 경우 한정자 없이 직접 호출로 변경
-        if (isReferenceInTargetClass(reference.dependentClass, targetClass)) {
+        if (isReferenceInTargetClass(reference.containingClass, targetClass)) {
             updateMethodReferenceToInternalCall(reference.element as PsiMethodCallExpression)
             return
         }
 
         // 필드 주입이 필요한 경우에만 필드 추가 및 임포트 추가
-        fieldInjector.injectFieldIfNeeded(reference.dependentClass, targetClass, accessModifier)
+        fieldInjector.injectFieldIfNeeded(reference.containingClass, targetClass, accessModifier)
 
         // 메소드 호출 업데이트
         updateMethodReference(

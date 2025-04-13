@@ -7,6 +7,6 @@ import com.intellij.psi.*
  */
 data class MethodReferenceInfo(
     val element: PsiElement,
-    val dependentClass: PsiClass,
+    val containingClass: PsiClass,
     val originalQualifier: String?
 )
