@@ -58,14 +58,19 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
                 if (reference.method in methodsToMove) {
                     continue
                 }
-                methodReferenceUpdater.updateMethodReferences(reference, targetClass, accessModifier)
+                methodReferenceUpdater.updateForMethodsNotInMethodGroup(reference, targetClass, accessModifier)
             }
 
             // 이동하지 않는 메소드를 참조하는 이동하는 메소드들의 참조 변경
             val methodReferences = methodReferenceFinder.findReferencesOf(methodsToStay)
             for (reference in methodReferences) {
                 if (reference.method in methodsToMove) {
-                    methodReferenceUpdater.simpleUpdateMethodReferences(reference, originalClass, accessModifier)
+                    methodReferenceUpdater.updateForMethodsInMethodGroup(
+                        reference.element,
+                        originalClass,
+                        targetClass,
+                        accessModifier,
+                    )
                 }
             }
 

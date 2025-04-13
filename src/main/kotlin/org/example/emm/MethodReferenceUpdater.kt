@@ -14,7 +14,7 @@ class MethodReferenceUpdater(project: Project) {
     private val fieldInjector = FieldInjector(project)
 
     // 메소드 참조 업데이트
-    fun updateMethodReferences(
+    fun updateForMethodsNotInMethodGroup(
         reference: MethodReferenceInfo,
         targetClass: PsiClass,
         accessModifier: String
@@ -33,16 +33,17 @@ class MethodReferenceUpdater(project: Project) {
     }
 
     // 메소드 참조 업데이트
-    fun simpleUpdateMethodReferences(
-        reference: MethodReferenceInfo,
-        targetClass: PsiClass,
+    fun updateForMethodsInMethodGroup(
+        reference: PsiMethodCallExpression,
+        fromClass: PsiClass,
+        toClass: PsiClass,
         accessModifier: String
     ) {
-        val resolveMethod = reference.element.resolveMethod()
-        makeMethodPublic(resolveMethod!!)
+        makeMethodPublic(reference.resolveMethod()!!)
 
-        // 메소드 호출 업데이트
-        updateMethodReference(reference.element, (targetClass.name)!!.decapitalize())
+        fieldInjector.injectFieldIfNeeded(toClass, fromClass, accessModifier)
+
+        updateMethodReference(reference, (fromClass.name)!!.decapitalize())
     }
 
     private fun makeMethodPublic(method: PsiMethod) {

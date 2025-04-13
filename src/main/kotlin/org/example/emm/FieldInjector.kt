@@ -15,22 +15,22 @@ class FieldInjector(private val project: Project) {
      * 클래스에 필요한 필드가 없는 경우 필드를 추가하고 import를 처리함
      */
     fun injectFieldIfNeeded(
-        dependentClass: PsiClass,
-        targetClass: PsiClass,
+        classToInjectField: PsiClass,
+        fieldType: PsiClass,
         accessModifier: String
     ): Boolean {
-        val targetQualifiedName = targetClass.qualifiedName ?: return false
+        val targetQualifiedName = fieldType.qualifiedName ?: return false
 
         // 이미 필드가 있으면 추가하지 않음
-        if (hasFieldOfType(dependentClass, targetQualifiedName)) {
+        if (hasFieldOfType(classToInjectField, targetQualifiedName)) {
             return false
         }
 
         // 필드 추가
-        addFieldToClass(dependentClass, targetClass, accessModifier)
+        addFieldToClass(classToInjectField, fieldType, accessModifier)
 
         // import 추가
-        addImportIfNeeded(dependentClass, targetQualifiedName)
+        addImportIfNeeded(classToInjectField, targetQualifiedName)
 
         return true
     }
@@ -48,24 +48,24 @@ class FieldInjector(private val project: Project) {
      * 클래스에 필드 추가
      */
     private fun addFieldToClass(
-        dependentClass: PsiClass,
-        targetClass: PsiClass,
+        classToInjectField: PsiClass,
+        fieldType: PsiClass,
         accessModifier: String
     ) {
-        val fieldName = targetClass.name?.decapitalize() ?: return
-        val fieldText = "$accessModifier ${targetClass.name} $fieldName;"
-        val field = factory.createFieldFromText(fieldText, dependentClass)
+        val fieldName = fieldType.name?.decapitalize() ?: return
+        val fieldText = "$accessModifier ${fieldType.name} $fieldName;"
+        val field = factory.createFieldFromText(fieldText, classToInjectField)
 
-        val lastInstanceField = dependentClass.fields.lastOrNull { !it.hasModifierProperty(PsiModifier.STATIC) }
+        val lastInstanceField = classToInjectField.fields.lastOrNull { !it.hasModifierProperty(PsiModifier.STATIC) }
 
         if (lastInstanceField != null) {
-            dependentClass.addAfter(field, lastInstanceField)
+            classToInjectField.addAfter(field, lastInstanceField)
         } else {
-            val anchor = dependentClass.lBrace
+            val anchor = classToInjectField.lBrace
             if (anchor != null) {
-                dependentClass.addAfter(field, anchor)
+                classToInjectField.addAfter(field, anchor)
             } else {
-                dependentClass.add(field)
+                classToInjectField.add(field)
             }
         }
     }
