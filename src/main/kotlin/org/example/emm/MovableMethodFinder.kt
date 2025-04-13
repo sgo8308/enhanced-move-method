@@ -142,5 +142,4 @@ class MovableMethodFinder {
         return true
     }
 
-
 }

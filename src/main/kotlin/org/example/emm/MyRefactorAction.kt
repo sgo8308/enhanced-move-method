@@ -74,10 +74,21 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
                 }
             }
 
+            //이동 대상 메소드 내부에서 참조하는 외부 클래스들에 대해 필요할 경우 필드 주입
+            methodReferenceFinder.findExternalClassesReferencedInMethods(methodsToMove, originalClass, targetClass)
+                .forEach { externalClass ->
+                    fieldInjector.injectFieldIfNeeded(targetClass, externalClass, accessModifier)
+                }
+
             // 이동 대상 메소드를 대상 클래스에 복사
             val orderedMethodsToMove = originalClass.methods.filter { it in methodsToMove }
+            val externalDependentMethods = methodReferencesToUpdate.map { it.method }
             for (methodToCopy in orderedMethodsToMove) {
                 val methodCopy = factory.createMethodFromText(methodToCopy.text, targetClass)
+                if (methodToCopy !in externalDependentMethods) {
+                    methodReferenceUpdater.changeMethodModifier(methodCopy, PsiModifier.PRIVATE)
+                }
+
                 targetClass.add(methodCopy)
             }
 
@@ -85,6 +96,7 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
             for (methodToDelete in orderedMethodsToMove.reversed()) {
                 methodToDelete.delete()
             }
+
         }
 
         // 완료 메시지 구성 및 표시

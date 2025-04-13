@@ -39,17 +39,17 @@ class MethodReferenceUpdater(project: Project) {
         toClass: PsiClass,
         accessModifier: String
     ) {
-        makeMethodPublic(reference.resolveMethod()!!)
+        changeMethodModifier(reference.resolveMethod()!!, PsiModifier.PUBLIC)
 
         fieldInjector.injectFieldIfNeeded(toClass, fromClass, accessModifier)
 
         updateMethodReference(reference, (fromClass.name)!!.decapitalize())
     }
 
-    private fun makeMethodPublic(method: PsiMethod) {
+    fun changeMethodModifier(method: PsiMethod, modifier: String) {
         val modifierList = method.modifierList
-        if (!modifierList.hasModifierProperty(PsiModifier.PUBLIC)) {
-            modifierList.setModifierProperty(PsiModifier.PUBLIC, true)
+        if (!modifierList.hasModifierProperty(modifier)) {
+            modifierList.setModifierProperty(modifier, true)
         }
     }
 

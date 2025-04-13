@@ -43,4 +43,32 @@ class MethodReferenceFinder(private val project: Project) {
         }
         return usages
     }
+
+    // 메소드 내부에서 참조하는 외부 클래스 수집
+    fun findExternalClassesReferencedInMethods(
+        methodsToMove: Set<PsiMethod>,
+        originalClass: PsiClass,
+        targetClass: PsiClass
+    ): Set<PsiClass> {
+        val externalClassesToInject = mutableSetOf<PsiClass>()
+
+        for (method in methodsToMove) {
+            val body = method.body ?: continue
+            val methodCalls = body.statements.flatMap { statement ->
+                statement.children.filterIsInstance<PsiMethodCallExpression>()
+            }
+
+            for (methodCall in methodCalls) {
+                val referencedMethod = methodCall.resolveMethod() ?: continue
+                val referencedClass = referencedMethod.containingClass ?: continue
+
+                // 외부 클래스인지 확인
+                if (referencedClass != originalClass && referencedClass != targetClass) {
+                    externalClassesToInject.add(referencedClass)
+                }
+            }
+        }
+
+        return externalClassesToInject
+    }
 }
