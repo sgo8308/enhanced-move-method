@@ -1,6 +1,8 @@
 package org.example.emm
 
 import com.intellij.openapi.project.Project
+import com.intellij.psi.PsiMethod
+import com.intellij.psi.PsiModifier
 import com.intellij.psi.*
 
 /**
@@ -27,10 +29,27 @@ class MethodReferenceUpdater(project: Project) {
         fieldInjector.injectFieldIfNeeded(reference.containingClass, targetClass, accessModifier)
 
         // 메소드 호출 업데이트
-        updateMethodReference(
-            reference.element,
-            (targetClass.name)!!.decapitalize()
-        )
+        updateMethodReference(reference.element, (targetClass.name)!!.decapitalize())
+    }
+
+    // 메소드 참조 업데이트
+    fun simpleUpdateMethodReferences(
+        reference: MethodReferenceInfo,
+        targetClass: PsiClass,
+        accessModifier: String
+    ) {
+        val resolveMethod = reference.element.resolveMethod()
+        makeMethodPublic(resolveMethod!!)
+
+        // 메소드 호출 업데이트
+        updateMethodReference(reference.element, (targetClass.name)!!.decapitalize())
+    }
+
+    private fun makeMethodPublic(method: PsiMethod) {
+        val modifierList = method.modifierList
+        if (!modifierList.hasModifierProperty(PsiModifier.PUBLIC)) {
+            modifierList.setModifierProperty(PsiModifier.PUBLIC, true)
+        }
     }
 
     // 참조가 타겟 클래스 내에 있는지 확인하는 메소드

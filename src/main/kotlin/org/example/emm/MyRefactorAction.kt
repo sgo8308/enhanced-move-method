@@ -61,6 +61,14 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
                 methodReferenceUpdater.updateMethodReferences(reference, targetClass, accessModifier)
             }
 
+            // 이동하지 않는 메소드를 참조하는 이동하는 메소드들의 참조 변경
+            val methodReferences = methodReferenceFinder.findReferencesOf(methodsToStay)
+            for (reference in methodReferences) {
+                if (reference.method in methodsToMove) {
+                    methodReferenceUpdater.simpleUpdateMethodReferences(reference, originalClass, accessModifier)
+                }
+            }
+
             // 이동 대상 메소드를 대상 클래스에 복사
             val orderedMethodsToMove = originalClass.methods.filter { it in methodsToMove }
             for (methodToCopy in orderedMethodsToMove) {
