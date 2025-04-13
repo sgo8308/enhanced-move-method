@@ -22,12 +22,9 @@ class MethodReferenceFinder(private val project: Project) {
         for (usage in usages) {
             val methodCall = usage.parentOfType<PsiMethodCallExpression>(false)
             if (methodCall != null) {
-                val dependentClass = usage.parentOfType<PsiClass>(false) ?: continue
-
-                val qualifierExpression = methodCall.methodExpression.qualifierExpression
-                val qualifier = qualifierExpression?.text
-
-                result.add(MethodReferenceInfo(methodCall, dependentClass, qualifier))
+                val containingClass = usage.parentOfType<PsiClass>(false) ?: continue
+                val method = usage.parentOfType<PsiMethod>(true) ?: continue
+                result.add(MethodReferenceInfo(methodCall, containingClass, method))
             }
         }
 

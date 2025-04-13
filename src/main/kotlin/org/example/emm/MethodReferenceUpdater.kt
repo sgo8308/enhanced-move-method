@@ -6,7 +6,7 @@ import com.intellij.psi.*
 /**
  * 메소드 참조 업데이트를 담당하는 클래스
  */
-class MethodReferenceUpdater(private val project: Project) {
+class MethodReferenceUpdater(project: Project) {
 
     private val factory: PsiElementFactory = JavaPsiFacade.getElementFactory(project)
     private val fieldInjector = FieldInjector(project)
@@ -19,7 +19,7 @@ class MethodReferenceUpdater(private val project: Project) {
     ) {
         // 타겟 클래스 내부에서의 호출인 경우 한정자 없이 직접 호출로 변경
         if (isReferenceInTargetClass(reference.containingClass, targetClass)) {
-            updateMethodReferenceToInternalCall(reference.element as PsiMethodCallExpression)
+            updateMethodReferenceToInternalCall(reference.element)
             return
         }
 
@@ -28,7 +28,7 @@ class MethodReferenceUpdater(private val project: Project) {
 
         // 메소드 호출 업데이트
         updateMethodReference(
-            reference.element as PsiMethodCallExpression,
+            reference.element,
             (targetClass.name)!!.decapitalize()
         )
     }

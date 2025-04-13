@@ -55,7 +55,7 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
             // 이동 대상 메소드를 호출하는 외부 메소드들의 참조 변경
             val methodReferencesToUpdate = methodReferenceFinder.findReferencesOf(methodsToMove)
             for (reference in methodReferencesToUpdate) {
-                if(reference.containingClass == originalClass) {
+                if (reference.method in methodsToMove) {
                     continue
                 }
                 methodReferenceUpdater.updateMethodReferences(reference, targetClass, accessModifier)
@@ -72,8 +72,6 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
             for (methodToDelete in orderedMethodsToMove.reversed()) {
                 methodToDelete.delete()
             }
-
-
         }
 
         // 완료 메시지 구성 및 표시
