@@ -1,5 +1,6 @@
 package org.example.emm
 
+import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
@@ -11,16 +12,32 @@ import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.parentOfType
 
-class MyRefactorAction : AnAction("Enhanced Move Method") {
-    // 프로젝트 인스턴스 필드 추가
+class MyRefactorAction : AnAction() {
     private lateinit var project: Project
     private lateinit var factory: PsiElementFactory
 
-    // 의존성 분석기 및 참조 핸들러
     private val movableMethodFinder = MovableMethodFinder()
     private lateinit var methodReferenceFinder: MethodReferenceFinder
     private lateinit var methodReferenceUpdater: MethodReferenceUpdater
     private lateinit var fieldInjector: FieldInjector
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.text = "Enhanced Move Method"
+        e.presentation.isEnabledAndVisible = isActionApplicable(e)
+    }
+
+    private fun isActionApplicable(e: AnActionEvent): Boolean {
+        val editor = e.getData(CommonDataKeys.EDITOR)
+        val psiFile = e.getData(CommonDataKeys.PSI_FILE)
+        val caret = editor?.caretModel?.currentCaret
+        val offset = caret?.offset
+        val element = psiFile?.findElementAt(offset ?: -1)
+        return element?.parentOfType<PsiMethod>(true) != null
+    }
+
+    override fun getActionUpdateThread(): ActionUpdateThread {
+        return ActionUpdateThread.BGT
+    }
 
     override fun actionPerformed(e: AnActionEvent) {
         project = e.project ?: return
@@ -112,7 +129,7 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
         }
 
         // 완료 메시지 구성 및 표시
-        showCompletionMessage(originalMethod, originalClass, targetClass, methodsToMove.size, methodsToStay.size)
+        showCompletionMessage(originalMethod, originalClass, targetClass, methodsToMove)
     }
 
 
@@ -122,15 +139,6 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
         return references.isEmpty()
     }
 
-    override fun update(e: AnActionEvent) {
-        val editor = e.getData(CommonDataKeys.EDITOR)
-        val psiFile = e.getData(CommonDataKeys.PSI_FILE)
-        val caret = editor?.caretModel?.currentCaret
-        val offset = caret?.offset
-        val element = psiFile?.findElementAt(offset ?: -1)
-        val method = element?.parentOfType<PsiMethod>(true)
-        e.presentation.isEnabledAndVisible = method != null
-    }
 
     private fun findMethodAtCaret(e: AnActionEvent): PsiMethod? {
         val editor = e.getData(CommonDataKeys.EDITOR) ?: return null
@@ -144,20 +152,20 @@ class MyRefactorAction : AnAction("Enhanced Move Method") {
         originalMethod: PsiMethod,
         originalClass: PsiClass,
         targetClass: PsiClass,
-        movedMethodsCount: Int,
-        stayMethodsCount: Int
+        movedMethods: Set<PsiMethod>
     ) {
-        val movedMethodsMessage = if (movedMethodsCount > 1) {
-            "메서드 '${originalMethod.name}' 및 관련된 ${movedMethodsCount - 1}개의 메서드가"
-        } else {
-            "메서드 '${originalMethod.name}'이(가)"
+        val movedMethodsMessage = buildString {
+            append("메서드 '${originalMethod.name}'가 '${originalClass.name}'에서 '${targetClass.name}'로 이동되었습니다.")
+            if (movedMethods.size > 1) {
+                append("\n\n같이 이동된 내부 메서드:")
+                movedMethods.filter { it != originalMethod }.forEach { method ->
+                    append("\n- ${method.name}")
+                }
+            }
         }
-        val stayMethodsMessage = if (stayMethodsCount > 0) {
-            "\n\n${stayMethodsCount}개의 메서드는 다른 메서드에서도 사용되므로 이동되지 않았으며, 대신 소스 클래스를 통해 호출됩니다."
-        } else ""
         Messages.showMessageDialog(
             project,
-            "${movedMethodsMessage} '${originalClass.name}'에서 '${targetClass.name}'으로 이동되었습니다.${stayMethodsMessage}",
+            movedMethodsMessage,
             "메서드 이동 완료",
             Messages.getInformationIcon()
         )
