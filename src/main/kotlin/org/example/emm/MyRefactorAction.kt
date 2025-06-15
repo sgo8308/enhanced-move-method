@@ -104,7 +104,7 @@ class MyRefactorAction : AnAction() {
             val externalDependentMethods = methodReferencesToUpdate.map { it.method }
             for (methodToCopy in orderedMethodsToMove) {
                 val methodCopy = factory.createMethodFromText(methodToCopy.text, targetClass)
-                if (methodToCopy !in externalDependentMethods) {
+                if (methodToCopy !in externalDependentMethods && methodToCopy != originalMethod) {
                     methodReferenceUpdater.changeMethodModifier(methodCopy, PsiModifier.PRIVATE)
                 }
 
