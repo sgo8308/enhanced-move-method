@@ -1,10 +1,7 @@
 package org.example.emm
 
 import com.intellij.openapi.project.Project
-import com.intellij.psi.PsiClass
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiMethod
-import com.intellij.psi.PsiMethodCallExpression
+import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.parentOfType
@@ -54,19 +51,18 @@ class MethodReferenceFinder(private val project: Project) {
 
         for (method in methodsToMove) {
             val body = method.body ?: continue
-            val methodCalls = body.statements.flatMap { statement ->
-                statement.children.filterIsInstance<PsiMethodCallExpression>()
-            }
+            body.accept(object : JavaRecursiveElementVisitor() {
+                override fun visitMethodCallExpression(expression: PsiMethodCallExpression) {
+                    super.visitMethodCallExpression(expression)
+                    val referencedMethod = expression.resolveMethod() ?: return
+                    val referencedClass = referencedMethod.containingClass ?: return
 
-            for (methodCall in methodCalls) {
-                val referencedMethod = methodCall.resolveMethod() ?: continue
-                val referencedClass = referencedMethod.containingClass ?: continue
-
-                // 외부 클래스인지 확인
-                if (referencedClass != originalClass && referencedClass != targetClass) {
-                    externalClassesToInject.add(referencedClass)
+                    // 외부 클래스인지 확인
+                    if (referencedClass != originalClass && referencedClass != targetClass) {
+                        externalClassesToInject.add(referencedClass)
+                    }
                 }
-            }
+            })
         }
 
         return externalClassesToInject
