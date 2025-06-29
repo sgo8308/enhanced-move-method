@@ -10,6 +10,7 @@ import com.intellij.openapi.ui.Messages
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
+import com.intellij.psi.util.PsiUtil
 import com.intellij.psi.util.parentOfType
 
 class MyRefactorAction : AnAction() {
@@ -99,6 +100,10 @@ class MyRefactorAction : AnAction() {
                     fieldInjector.injectFieldIfNeeded(targetClass, externalClass, accessModifier)
                 }
 
+            // 이동 대상 메소드에 필요한 import 추가
+            val usedClasses = collectUsedClasses(originalMethod)
+            addImportsToTargetClass(targetClass, usedClasses)
+
             // 이동 대상 메소드를 대상 클래스에 복사
             val orderedMethodsToMove = originalClass.methods.filter { it in methodsToMove }
             val externalDependentMethods = methodReferencesToUpdate.map { it.method }
@@ -169,5 +174,87 @@ class MyRefactorAction : AnAction() {
             "메서드 이동 완료",
             Messages.getInformationIcon()
         )
+    }
+
+    /**
+     * 메소드에서 사용된 클래스 수집
+     */
+    private fun collectUsedClasses(method: PsiMethod): Set<PsiClass> {
+        val usedClasses = mutableSetOf<PsiClass>()
+
+        // 반환 타입
+        method.returnType?.let { returnType ->
+            if (returnType is PsiClassType) {
+                PsiUtil.resolveClassInType(returnType)?.let { usedClasses.add(it) }
+                returnType.parameters.mapNotNull { parameterType ->
+                    PsiUtil.resolveClassInType(parameterType)
+                }.forEach { usedClasses.add(it) }
+            }
+        }
+
+        // 매개변수 타입
+        method.parameterList.parameters.forEach { param ->
+            val paramType = param.type
+            if (paramType is PsiClassType) {
+                PsiUtil.resolveClassInType(paramType)?.let { usedClasses.add(it) }
+                paramType.parameters.mapNotNull { parameterType ->
+                    PsiUtil.resolveClassInType(parameterType)
+                }.forEach { usedClasses.add(it) }
+            }
+        }
+        // throws 예외 타입
+        method.throwsList.referencedTypes.forEach { type ->
+            type.resolve()?.let { usedClasses.add(it) }
+        }
+
+        // 메소드 내부에서 사용된 클래스
+        method.body?.let { body ->
+            body.accept(object : JavaRecursiveElementVisitor() {
+                override fun visitReferenceExpression(expression: PsiReferenceExpression) {
+                    super.visitReferenceExpression(expression)
+                    expression.resolve()?.let { resolved ->
+                        if (resolved is PsiClass) {
+                            usedClasses.add(resolved)
+                        }
+                    }
+                }
+
+                override fun visitTypeElement(typeElement: PsiTypeElement) {
+                    super.visitTypeElement(typeElement)
+                    PsiUtil.resolveClassInType(typeElement.type)?.let { usedClasses.add(it) }
+                }
+
+                override fun visitNewExpression(expression: PsiNewExpression) {
+                    super.visitNewExpression(expression)
+                    expression.classReference?.resolve()?.let { resolved ->
+                        if (resolved is PsiClass) {
+                            usedClasses.add(resolved)
+                        }
+                    }
+                }
+            })
+        }
+
+        return usedClasses
+    }
+
+    /**
+     * 타겟 클래스에 필요한 import 추가
+     */
+    private fun addImportsToTargetClass(targetClass: PsiClass, usedClasses: Set<PsiClass>) {
+        val file = targetClass.containingFile as? PsiJavaFile ?: return
+
+        usedClasses.forEach { psiClass ->
+            val qualifiedName = psiClass.qualifiedName ?: return@forEach
+            val importStatement = factory.createImportStatement(
+                JavaPsiFacade.getInstance(project).findClass(qualifiedName, GlobalSearchScope.allScope(project))
+                    ?: return@forEach
+            )
+
+            // 중복 import 방지
+            if (file.importList?.importStatements?.none { it.qualifiedName == qualifiedName } == true) {
+                file.importList?.add(importStatement)
+            }
+        }
     }
 }
