@@ -8,6 +8,7 @@ import com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.psi.*
+import com.intellij.psi.codeStyle.JavaCodeStyleManager
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiUtil
@@ -131,6 +132,9 @@ class MyRefactorAction : AnAction() {
                     }
                 }
             }
+
+            optimizeImports(originalClass)
+            optimizeImports(targetClass)
         }
 
         // 완료 메시지 구성 및 표시
@@ -194,5 +198,13 @@ class MyRefactorAction : AnAction() {
                 file.importList?.add(importStatement)
             }
         }
+    }
+
+    /**
+     * 타겟 클래스의 import 최적화
+     */
+    private fun optimizeImports(targetClass: PsiClass) {
+        val file = targetClass.containingFile as? PsiJavaFile ?: return
+        JavaCodeStyleManager.getInstance(project).optimizeImports(file)
     }
 }
