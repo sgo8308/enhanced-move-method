@@ -18,13 +18,15 @@ class MethodMover(private val project: Project) {
 
     /**
      * 메소드 이동을 수행하는 메인 메소드
+     *
+     * @return 이동된 메서드 목록
      */
     fun moveMethod(
         originalMethod: PsiMethod,
         originalClass: PsiClass,
         targetClass: PsiClass,
         accessModifier: String
-    ) {
+    ): Set<PsiMethod> {
         // 메소드와 그 의존성 메소드들의 이동 가능 여부 분석
         val methodGroupWithCanMoveMap = movableMethodFinder.findMethodGroupWithCanMove(originalMethod)
         val methodsToMove = methodGroupWithCanMoveMap.filter { it.value }.keys.toSet()
@@ -36,7 +38,7 @@ class MethodMover(private val project: Project) {
         // 이동하지 않는 메소드를 참조하는 이동하는 메소드들의 참조 변경
         updateInternalReferences(methodsToStay, methodsToMove, originalClass, targetClass, accessModifier)
 
-        // 외부 클래스 의존성 처리 
+        // 외부 클래스 의존성 처리
         handleExternalDependencies(methodsToMove, originalClass, targetClass, accessModifier)
 
         // 메소드 복사 및 접근 제어자 설정
@@ -45,7 +47,8 @@ class MethodMover(private val project: Project) {
         // 원본 메소드 삭제 및 정리 작업
         cleanupAfterMove(methodsToMove, originalClass, targetClass, methodReferencesToUpdate)
 
-        // 가져온 데이터를 리턴하지 않고 클래스 변수로 저장해두면 moveMethod 메소드를 호출한 클래스에서 접근 가능
+        // 이동된 메서드 목록 반환
+        return methodsToMove
     }
 
     /**

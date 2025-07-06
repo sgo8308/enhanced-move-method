@@ -8,10 +8,6 @@ import com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.psi.*
-import com.intellij.psi.codeStyle.JavaCodeStyleManager
-import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.psi.search.searches.ReferencesSearch
-import com.intellij.psi.util.PsiUtil
 import com.intellij.psi.util.parentOfType
 
 class MyRefactorAction : AnAction() {
@@ -59,18 +55,13 @@ class MyRefactorAction : AnAction() {
         val originalClass = originalMethod.containingClass ?: return
 
         // MethodMover 클래스를 사용하여 메소드 이동 처리
-        val methodMover = MethodMover(project)
-
+        var movedMethods: Set<PsiMethod> = emptySet()
         runWriteCommandAction(project) {
-            methodMover.moveMethod(originalMethod, originalClass, targetClass, accessModifier)
+            movedMethods = MethodMover(project).moveMethod(originalMethod, originalClass, targetClass, accessModifier)
         }
 
         // 완료 메시지 구성 및 표시
-        showCompletionMessage(originalMethod, originalClass, targetClass, 
-            movableMethodFinder.findMethodGroupWithCanMove(originalMethod)
-                .filter { it.value }
-                .keys.toSet()
-        )
+        showCompletionMessage(originalMethod, originalClass, targetClass, movedMethods)
     }
 
 
@@ -82,6 +73,14 @@ class MyRefactorAction : AnAction() {
         return element.parentOfType<PsiMethod>(true)
     }
 
+    /**
+     * 메서드 이동 완료 메시지를 보여줍니다.
+     *
+     * @param originalMethod 원래 이동된 메인 메서드
+     * @param originalClass 원본 클래스
+     * @param targetClass 대상 클래스
+     * @param movedMethods 함께 이동된 메서드 목록 (MethodMover에서 계산되어 반환됨)
+     */
     private fun showCompletionMessage(
         originalMethod: PsiMethod,
         originalClass: PsiClass,
@@ -89,9 +88,9 @@ class MyRefactorAction : AnAction() {
         movedMethods: Set<PsiMethod>
     ) {
         val movedMethodsMessage = buildString {
-            append("메서드 '${originalMethod.name}'가 '${originalClass.name}'에서 '${targetClass.name}'로 이동되었습니다.")
+            append("Method '${originalMethod.name}' has been moved from '${originalClass.name}' to '${targetClass.name}'.")
             if (movedMethods.size > 1) {
-                append("\n\n같이 이동된 내부 메서드:")
+                append("\n\nAlso moved the following methods:")
                 movedMethods.filter { it != originalMethod }.forEach { method ->
                     append("\n- ${method.name}")
                 }
@@ -100,7 +99,7 @@ class MyRefactorAction : AnAction() {
         Messages.showMessageDialog(
             project,
             movedMethodsMessage,
-            "메서드 이동 완료",
+            "Method Moved Successfully",
             Messages.getInformationIcon()
         )
     }

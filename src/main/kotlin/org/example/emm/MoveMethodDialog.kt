@@ -28,7 +28,7 @@ class MoveMethodDialog(
     private val radioButtons = accessModifiers.map { JBRadioButton(it) }.toTypedArray()
 
     init {
-        title = "메소드 이동 - $initialMethodName"
+        title = "Move Method - $initialMethodName"
         init()
         // 마지막 선택된 접근 제어자를 기본값으로 설정
         radioButtons.firstOrNull { it.text == lastSelectedAccessModifier }?.isSelected = true
@@ -61,19 +61,19 @@ class MoveMethodDialog(
 
         // 상단 정보 패널
         val infoPanel = JPanel(GridLayout(2, 1, 0, 5))
-        infoPanel.add(JBLabel("메소드: $initialMethodName"))
-        infoPanel.add(JBLabel("원본 클래스: $sourceClassName"))
+        infoPanel.add(JBLabel("Method: $initialMethodName"))
+        infoPanel.add(JBLabel("Source Class: $sourceClassName"))
         panel.add(infoPanel, BorderLayout.NORTH)
 
         // 중앙 클래스 선택 패널
         val classPanel = JPanel(BorderLayout(5, 0))
-        classPanel.add(JBLabel("대상 클래스: "), BorderLayout.WEST)
+        classPanel.add(JBLabel("Target Class: "), BorderLayout.WEST)
 
         val classSelectorPanel = JPanel(BorderLayout(5, 0))
         classSelectorPanel.add(targetClassField, BorderLayout.CENTER)
         targetClassField.preferredSize = Dimension(300, targetClassField.preferredSize.height)  // 텍스트 필드 가로 크기 조정
 
-        val browseButton = JButton("변경...")
+        val browseButton = JButton("Browse...")
         browseButton.addActionListener { openClassChooser() }
         classSelectorPanel.add(browseButton, BorderLayout.EAST)
 
@@ -82,7 +82,7 @@ class MoveMethodDialog(
 
         // 하단 접근 제어자 선택 패널
         val accessModifierPanel = JPanel(BorderLayout(0, 5))
-        accessModifierPanel.add(JBLabel("필드 접근 제어자:"), BorderLayout.NORTH)
+        accessModifierPanel.add(JBLabel("Injected Field Access Modifier (for moved method's class):"), BorderLayout.NORTH)
 
         val radioPanel = JPanel(GridLayout(radioButtons.size, 1))
         val buttonGroup = ButtonGroup()
@@ -100,7 +100,7 @@ class MoveMethodDialog(
 
     private fun openClassChooser(): Boolean {
         val chooserFactory = TreeClassChooserFactory.getInstance(project)
-        val chooser = chooserFactory.createProjectScopeChooser("대상 클래스 선택")
+        val chooser = chooserFactory.createProjectScopeChooser("Select Target Class")
 
         chooser.showDialog()
         val selected = chooser.selected
