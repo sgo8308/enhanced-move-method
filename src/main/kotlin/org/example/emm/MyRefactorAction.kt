@@ -16,12 +16,7 @@ import com.intellij.psi.util.parentOfType
 
 class MyRefactorAction : AnAction() {
     private lateinit var project: Project
-    private lateinit var factory: PsiElementFactory
-
     private val movableMethodFinder = MovableMethodFinder()
-    private lateinit var methodReferenceFinder: MethodReferenceFinder
-    private lateinit var methodReferenceUpdater: MethodReferenceUpdater
-    private lateinit var fieldInjector: FieldInjector
 
     override fun update(e: AnActionEvent) {
         e.presentation.text = "Enhanced Move Method"
@@ -43,10 +38,6 @@ class MyRefactorAction : AnAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         project = e.project ?: return
-        factory = JavaPsiFacade.getElementFactory(project)
-        methodReferenceFinder = MethodReferenceFinder(project)
-        methodReferenceUpdater = MethodReferenceUpdater(project)
-        fieldInjector = FieldInjector(project)
 
         val originalMethod = findMethodAtCaret(e) ?: return
         val originalClass = originalMethod.containingClass ?: return
@@ -67,85 +58,19 @@ class MyRefactorAction : AnAction() {
         val originalMethod = findMethodAtCaret(e) ?: return
         val originalClass = originalMethod.containingClass ?: return
 
-        // 메소드와 그 의존성 메소드들의 이동 가능 여부 분석
-        val methodGroupWithCanMoveMap = movableMethodFinder.findMethodGroupWithCanMove(originalMethod)
-        val methodsToMove = methodGroupWithCanMoveMap.filter { it.value }.keys.toSet()
-        val methodsToStay = methodGroupWithCanMoveMap.filter { !it.value }.keys.toSet()
+        // MethodMover 클래스를 사용하여 메소드 이동 처리
+        val methodMover = MethodMover(project)
 
         runWriteCommandAction(project) {
-            // 이동 대상 메소드를 호출하는 외부 메소드들의 참조 변경
-            val methodReferencesToUpdate = methodReferenceFinder.findReferencesOf(methodsToMove)
-            for (reference in methodReferencesToUpdate) {
-                if (reference.method in methodsToMove) {
-                    continue
-                }
-                methodReferenceUpdater.updateForMethodsNotInMethodGroup(reference, targetClass, accessModifier)
-            }
-
-            // 이동하지 않는 메소드를 참조하는 이동하는 메소드들의 참조 변경
-            val methodReferences = methodReferenceFinder.findReferencesOf(methodsToStay)
-            for (reference in methodReferences) {
-                if (reference.method in methodsToMove) {
-                    methodReferenceUpdater.updateForMethodsInMethodGroup(
-                        reference.element,
-                        originalClass,
-                        targetClass,
-                        accessModifier,
-                    )
-                }
-            }
-
-            //이동 대상 메소드 내부에서 참조하는 외부 클래스들에 대해 필요할 경우 필드 주입
-            methodReferenceFinder.findExternalClassesReferencedInMethods(methodsToMove, originalClass, targetClass)
-                .forEach { externalClass ->
-                    fieldInjector.injectFieldIfNeeded(targetClass, externalClass, accessModifier)
-                }
-
-            // 이동 대상 메소드에 필요한 import 추가
-            val usedClasses = methodReferenceFinder.collectUsedClasses(originalMethod)
-            addImportsToTargetClass(targetClass, usedClasses)
-
-            // 이동 대상 메소드를 대상 클래스에 복사
-            val orderedMethodsToMove = originalClass.methods.filter { it in methodsToMove }
-            val externalDependentMethods = methodReferencesToUpdate.map { it.method }
-            for (methodToCopy in orderedMethodsToMove) {
-                val methodCopy = factory.createMethodFromText(methodToCopy.text, targetClass)
-                if (methodToCopy !in externalDependentMethods && methodToCopy != originalMethod) {
-                    methodReferenceUpdater.changeMethodModifier(methodCopy, PsiModifier.PRIVATE)
-                }
-
-                targetClass.add(methodCopy)
-            }
-
-            // 이동 대상 메소드들을 역순으로 삭제
-            for (methodToDelete in orderedMethodsToMove.reversed()) {
-                methodToDelete.delete()
-            }
-
-            // 메소드 이동과 관련된 모든 클래스에 대해서 safe delete 수행
-            val dirtyClasses = methodReferencesToUpdate.map { it.containingClass } + originalClass + targetClass
-            for (psiClass in dirtyClasses) {
-                val fields = psiClass.fields
-                for (field in fields) {
-                    if (isSafeToDelete(field, project)) {
-                        field.delete()
-                    }
-                }
-            }
-
-            optimizeImports(originalClass)
-            optimizeImports(targetClass)
+            methodMover.moveMethod(originalMethod, originalClass, targetClass, accessModifier)
         }
 
         // 완료 메시지 구성 및 표시
-        showCompletionMessage(originalMethod, originalClass, targetClass, methodsToMove)
-    }
-
-
-    private fun isSafeToDelete(field: PsiField, project: Project): Boolean {
-        val searchScope = GlobalSearchScope.projectScope(project)
-        val references = ReferencesSearch.search(field, searchScope).findAll()
-        return references.isEmpty()
+        showCompletionMessage(originalMethod, originalClass, targetClass, 
+            movableMethodFinder.findMethodGroupWithCanMove(originalMethod)
+                .filter { it.value }
+                .keys.toSet()
+        )
     }
 
 
@@ -178,33 +103,5 @@ class MyRefactorAction : AnAction() {
             "메서드 이동 완료",
             Messages.getInformationIcon()
         )
-    }
-
-    /**
-     * 타겟 클래스에 필요한 import 추가
-     */
-    private fun addImportsToTargetClass(targetClass: PsiClass, usedClasses: Set<PsiClass>) {
-        val file = targetClass.containingFile as? PsiJavaFile ?: return
-
-        usedClasses.forEach { psiClass ->
-            val qualifiedName = psiClass.qualifiedName ?: return@forEach
-            val importStatement = factory.createImportStatement(
-                JavaPsiFacade.getInstance(project).findClass(qualifiedName, GlobalSearchScope.allScope(project))
-                    ?: return@forEach
-            )
-
-            // 중복 import 방지
-            if (file.importList?.importStatements?.none { it.qualifiedName == qualifiedName } == true) {
-                file.importList?.add(importStatement)
-            }
-        }
-    }
-
-    /**
-     * 타겟 클래스의 import 최적화
-     */
-    private fun optimizeImports(targetClass: PsiClass) {
-        val file = targetClass.containingFile as? PsiJavaFile ?: return
-        JavaCodeStyleManager.getInstance(project).optimizeImports(file)
     }
 }
