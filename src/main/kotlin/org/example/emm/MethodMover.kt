@@ -107,8 +107,66 @@ class MethodMover(private val project: Project) {
             }
 
         // 이동 대상 메소드에 필요한 import 추가
-        val usedClasses = methodReferenceFinder.collectUsedClasses(methodsToMove.first())
+        val usedClasses = mutableSetOf<PsiClass>()
+        val staticImports = mutableSetOf<Pair<String, String>>() // 클래스명, 멤버명
+
+        methodsToMove.forEach { method ->
+            usedClasses.addAll(methodReferenceFinder.collectUsedClasses(method))
+            staticImports.addAll(collectStaticImports(method))
+        }
+
         addImportsToTargetClass(targetClass, usedClasses)
+        addStaticImportsToTargetClass(targetClass, staticImports)
+    }
+
+    /**
+     * 메소드에서 사용된 static import 목록 수집
+     */
+    private fun collectStaticImports(method: PsiMethod): Set<Pair<String, String>> {
+        val staticImports = mutableSetOf<Pair<String, String>>()
+
+        method.body?.accept(object : JavaRecursiveElementVisitor() {
+            override fun visitReferenceExpression(expression: PsiReferenceExpression) {
+                super.visitReferenceExpression(expression)
+
+                val resolved = expression.resolve()
+                if (resolved is PsiMember &&
+                    expression.qualifierExpression == null && // 한정자 없이 직접 사용된 경우
+                    (resolved.hasModifierProperty(PsiModifier.STATIC)) &&
+                    resolved.containingClass != null &&
+                    resolved.containingClass != method.containingClass
+                ) {
+
+                    val containingClass = resolved.containingClass ?: return
+                    val qualifiedClassName = containingClass.qualifiedName ?: return
+                    val memberName = resolved.name ?: return
+
+                    staticImports.add(Pair(qualifiedClassName, memberName))
+                }
+            }
+        })
+
+        return staticImports
+    }
+
+    /**
+     * 타겟 클래스에 static import 추가
+     */
+    private fun addStaticImportsToTargetClass(targetClass: PsiClass, staticImports: Set<Pair<String, String>>) {
+        val file = targetClass.containingFile as? PsiJavaFile ?: return
+        val importList = file.importList ?: return
+
+        staticImports.forEach { (className, memberName) ->
+            // 중복 static import 방지
+            if (importList.importStaticStatements.none { it.resolveTargetClass()?.qualifiedName == className && it.importReference?.referenceName == memberName }) {
+                val importStatement = factory.createImportStaticStatement(
+                    JavaPsiFacade.getInstance(project).findClass(className, GlobalSearchScope.allScope(project))
+                        ?: return@forEach,
+                    memberName
+                )
+                importList.add(importStatement)
+            }
+        }
     }
 
     /**
