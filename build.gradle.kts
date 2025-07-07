@@ -32,7 +32,6 @@ tasks {
 
     patchPluginXml {
         sinceBuild.set("231")
-        untilBuild.set("251.*")
     }
 
     signPlugin {
@@ -45,3 +44,4 @@ tasks {
         token.set(System.getenv("PUBLISH_TOKEN"))
     }
 }
+
