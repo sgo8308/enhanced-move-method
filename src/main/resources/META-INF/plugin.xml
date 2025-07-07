@@ -13,9 +13,24 @@
     <!-- Description of the plugin displayed on the Plugin Page and IDE Plugin Manager.
          Simple HTML elements (text formatting, paragraphs, and lists) can be added inside of <![CDATA[ ]]> tag.
          Guidelines: https://plugins.jetbrains.com/docs/marketplace/plugin-overview-page.html#plugin-description -->
-    <description>
-        move method refactoring plugin for IntelliJ IDEA.
-    </description>
+    <description><![CDATA[
+<h2>Enhanced Move Method Refactoring</h2>
+
+<p>This plugin enhances the standard "Move Method" refactoring capability in IntelliJ IDEA with additional features designed to make method relocation more intelligent and efficient.</p>
+
+<h3>Key Features:</h3>
+<ul>
+    <li><b>Intelligent Dependency Analysis</b> - Automatically identifies and resolves method dependencies when moving methods between classes</li>
+    <li><b>Parameter Adaptation</b> - Smartly adjusts method parameters when necessary for the target class context</li>
+    <li><b>Reference Update</b> - Updates all references to the moved method throughout your codebase</li>
+    <li><b>Visibility Optimization</b> - Suggests appropriate visibility modifiers in the new context</li>
+    <li><b>Preview Changes</b> - Shows a detailed preview of all conflicts before applying them</li>
+</ul>
+
+<p>Simply select a method, activate "Move Method to Another Class" from the Refactoring menu, and follow the intuitive wizard to reorganize your code with confidence.</p>
+
+<p>Supports Java projects in all IntelliJ-based IDEs.</p>
+]]></description>
 
     <!-- Product and plugin compatibility requirements.
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
